@@ -1,16 +1,30 @@
 package main
 
 import (
+	"strconv"
+
 	"github.com/CzarSimon/httputil/dbutil"
 	"github.com/CzarSimon/httputil/environ"
 	"github.com/CzarSimon/httputil/jwt"
+	"go.uber.org/zap"
 )
 
 type config struct {
-	db             dbutil.Config
-	port           string
-	migrationsPath string
-	jwtCredentials jwt.Credentials
+	db              dbutil.Config
+	port            string
+	sessionRegistry sessionRegistryConfig
+	turn            turnConfig
+	migrationsPath  string
+	jwtCredentials  jwt.Credentials
+}
+
+type sessionRegistryConfig struct {
+	url string
+}
+
+type turnConfig struct {
+	udpPort     int
+	rpcProtocol string
 }
 
 func getConfig() config {
@@ -23,9 +37,29 @@ func getConfig() config {
 			Password:         environ.MustGet("DB_PASSWORD"),
 			ConnectionParams: "parseTime=true",
 		},
-		port:           environ.Get("SERVICE_PORT", "8080"),
-		migrationsPath: environ.Get("MIGRATIONS_PATH", "/etc/service-registry/migrations"),
-		jwtCredentials: getJwtCredentials(),
+		port:            environ.Get("SERVICE_PORT", "8080"),
+		turn:            getTurnConfig(),
+		sessionRegistry: getSessionRegistryConfig(),
+		migrationsPath:  environ.Get("MIGRATIONS_PATH", "/etc/service-registry/migrations"),
+		jwtCredentials:  getJwtCredentials(),
+	}
+}
+
+func getTurnConfig() turnConfig {
+	udpPort, err := strconv.Atoi(environ.Get("TURN_UDP_PORT", "3478"))
+	if err != nil {
+		log.Fatal("failed to parse turn udp port", zap.Error(err))
+	}
+
+	return turnConfig{
+		udpPort:     udpPort,
+		rpcProtocol: environ.Get("TURN_RPC_PROTOCOL", "http"),
+	}
+}
+
+func getSessionRegistryConfig() sessionRegistryConfig {
+	return sessionRegistryConfig{
+		url: environ.Get("SESSIONREGISTRY_URL", "http://session-registry:8080"),
 	}
 }
 

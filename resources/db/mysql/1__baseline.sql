@@ -1,0 +1,22 @@
+-- +migrate Up
+CREATE TABLE `session` (
+  `id` VARCHAR(50) NOT NULL,
+  `status` VARCHAR(20) NOT NULL,
+  `relay_server` VARCHAR(100) NOT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;;
+CREATE TABLE `participant` (
+  `id` VARCHAR(50) NOT NULL,
+  `user_id` VARCHAR(50) NOT NULL,
+  `session_id` VARCHAR(50) NOT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY(`session_id`) REFERENCES `session`(`id`),
+  UNIQUE(`session_id`, `user_id`),
+  PRIMARY KEY (`id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;;
+-- +migrate Down
+DROP TABLE IF EXISTS `participant`;
+DROP TABLE IF EXISTS `session`;

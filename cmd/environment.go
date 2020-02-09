@@ -3,11 +3,18 @@ package main
 import (
 	"database/sql"
 	"io"
+	"time"
 
 	"github.com/CzarSimon/httputil"
+	"github.com/CzarSimon/httputil/client"
+	"github.com/CzarSimon/httputil/client/rpc"
 	"github.com/CzarSimon/httputil/dbutil"
+	"github.com/CzarSimon/httputil/jwt"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
+	"github.com/rtcheap/service-clients/go/serviceregistry"
+	"github.com/rtcheap/service-clients/go/turnserver"
+	"github.com/rtcheap/session-manager/internal/repository"
 	"github.com/rtcheap/session-manager/internal/service"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"go.uber.org/zap"
@@ -61,10 +68,32 @@ func setupEnv() *env {
 		log.Fatal("failed to apply database migrations", zap.Error(err))
 	}
 
+	registryClient := serviceregistry.NewClient(client.Client{
+		RPCClient: rpc.NewClient(2 * time.Second),
+		Issuer:    jwt.NewIssuer(cfg.jwtCredentials),
+		BaseURL:   cfg.sessionRegistry.url,
+		Role:      jwt.SystemRole,
+		UserAgent: "session-manager/serviceregistry.Client",
+	})
+
+	turnClient := turnserver.NewClient(client.Client{
+		RPCClient: rpc.NewClient(time.Second),
+		Issuer:    jwt.NewIssuer(cfg.jwtCredentials),
+		Role:      jwt.SystemRole,
+		UserAgent: "session-manager/turnserver.Client",
+	})
+
 	return &env{
 		cfg:         cfg,
 		db:          db,
 		traceCloser: closer,
+		sessionService: service.SessionService{
+			RelayPort:       cfg.turn.udpPort,
+			TurnRPCProtocol: cfg.turn.rpcProtocol,
+			SessionRepo:     repository.NewSessionRepository(db),
+			RegistryClient:  registryClient,
+			TurnClient:      turnClient,
+		},
 	}
 }
 
