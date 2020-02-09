@@ -8,14 +8,16 @@ import (
 	"github.com/CzarSimon/httputil/dbutil"
 	"github.com/gin-gonic/gin"
 	"github.com/opentracing/opentracing-go"
+	"github.com/rtcheap/session-manager/internal/service"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"go.uber.org/zap"
 )
 
 type env struct {
-	cfg         config
-	db          *sql.DB
-	traceCloser io.Closer
+	cfg            config
+	db             *sql.DB
+	sessionService service.SessionService
+	traceCloser    io.Closer
 }
 
 func (e *env) checkHealth() error {

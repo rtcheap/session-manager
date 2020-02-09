@@ -1,8 +1,8 @@
 test:
-    go test ./...
+	go test ./...
 
 install:
-    go mod download
+	go mod download
 
 run:
-    sh run-local.sh
+	sh run-local.sh
