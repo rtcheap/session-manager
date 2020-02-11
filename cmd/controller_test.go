@@ -126,6 +126,26 @@ func TestCreateSession(t *testing.T) {
 	assert.True(session.UpdatedAt.After(beforeRequest))
 }
 
+func TestJoinSession_NoCredentials(t *testing.T) {
+	assert := assert.New(t)
+	e, ctx := createTestEnv()
+	defer e.db.Close()
+	server := newServer(e)
+
+	session := models.Session{
+		ID:          id.New(),
+		Status:      models.StatusCreated,
+		RelayServer: "turn-2:3478",
+	}
+	err := repository.NewSessionRepository(e.db).Save(ctx, session)
+	assert.NoError(err)
+
+	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
+	res := performTestRequest(server.Handler, req)
+
+	assert.Equal(http.StatusUnauthorized, res.Code)
+}
+
 // ---- Test utils ----
 
 func createTestEnv() (*env, context.Context) {

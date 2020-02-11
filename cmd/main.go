@@ -28,7 +28,7 @@ func newServer(e *env) *http.Server {
 	r := httputil.NewRouter("session-manager", e.checkHealth)
 
 	r.POST("/v1/sessions", e.createSession)
-	r.PUT("/v1/sessions/:sessionId", notImplemented) // join session
+	r.PUT("/v1/sessions/:sessionId", e.joinSession)
 
 	return &http.Server{
 		Addr:    ":" + e.cfg.port,

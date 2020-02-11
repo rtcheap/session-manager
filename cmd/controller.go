@@ -38,6 +38,21 @@ func (e *env) createSession(c *gin.Context) {
 	c.JSON(http.StatusOK, ref)
 }
 
+func (e *env) joinSession(c *gin.Context) {
+	span, _ := opentracing.StartSpanFromContext(c.Request.Context(), "controller.joinSession")
+	defer span.Finish()
+
+	_, httpErr := extractCredentials(c)
+	if httpErr != nil {
+		span.LogFields(tracelog.Bool("success", false), tracelog.Error(httpErr))
+		c.Error(httpErr)
+		return
+	}
+
+	span.LogFields(tracelog.Bool("success", true))
+	httputil.SendOK(c)
+}
+
 func extractCredentials(c *gin.Context) (models.Credentials, *httputil.Error) {
 	clientID := c.GetHeader(clientIDHeader)
 	clientSecret := c.GetHeader(clientSecretHeader)
