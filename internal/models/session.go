@@ -53,3 +53,21 @@ func (p Participant) String() string {
 		p.UpdatedAt,
 	)
 }
+
+// SessionOffer metadata required for creating a peer-to-peer session.
+type SessionOffer struct {
+	Token string        `json:"token,omitempty"`
+	TRUN  TurnCandidate `json:"trun,omitempty"`
+	STUN  StunCandidate `json:"stun,omitempty"`
+}
+
+// TurnCandidate ICE candidate for inititating a peer connection usring a relay server.
+type TurnCandidate struct {
+	URL      string `json:"url,omitempty"`
+	Username string `json:"username,omitempty"`
+}
+
+// StunCandidate ICE candidate for inititating a peer connection using a STUN server for network information exchange.
+type StunCandidate struct {
+	URL string `json:"url,omitempty"`
+}

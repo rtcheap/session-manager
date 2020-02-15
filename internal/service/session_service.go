@@ -31,6 +31,30 @@ type SessionService struct {
 	TurnClient      turnserver.Client
 }
 
+// Join adds a user as a session participant.
+func (s *SessionService) Join(ctx context.Context, sessionID string, creds models.Credentials) (models.SessionOffer, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service.SessionService.Join")
+	defer span.Finish()
+
+	participant := models.Participant{
+		ID:        id.New(),
+		UserID:    id.New(),
+		SessionID: sessionID,
+	}
+
+	// TODO: Register participant
+
+	err := s.SessionRepo.SaveParticipant(ctx, participant)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return models.SessionOffer{}, httputil.PreconditionRequiredError(err)
+	}
+
+	// TODO: create offer
+
+	return models.SessionOffer{}, nil
+}
+
 // Create creates a sesssion.
 func (s *SessionService) Create(ctx context.Context, creds models.Credentials) (dto.Reference, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "service.SessionService.Create")
@@ -38,17 +62,16 @@ func (s *SessionService) Create(ctx context.Context, creds models.Credentials) (
 
 	session, err := s.assignSessionToTurnServer(ctx)
 	if err != nil {
-		span.LogFields(tracelog.Bool("success", false), tracelog.Error(err))
+		span.LogFields(tracelog.Error(err))
 		return dto.Reference{}, err
 	}
 
 	err = s.SessionRepo.Save(ctx, session)
 	if err != nil {
-		span.LogFields(tracelog.Bool("success", false), tracelog.Error(err))
+		span.LogFields(tracelog.Error(err))
 		return dto.Reference{}, err
 	}
 
-	span.LogFields(tracelog.Bool("success", true))
 	return dto.Reference{ID: session.ID, System: "session-manager/session"}, nil
 }
 

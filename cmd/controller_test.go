@@ -146,6 +146,52 @@ func TestJoinSession_NoCredentials(t *testing.T) {
 	assert.Equal(http.StatusUnauthorized, res.Code)
 }
 
+func TestJoinSession_NoSession(t *testing.T) {
+	assert := assert.New(t)
+	e, _ := createTestEnv()
+	defer e.db.Close()
+	server := newServer(e)
+
+	sessionID := id.New()
+	req := createTestRequest("/v1/sessions/"+sessionID, http.MethodPut, "", nil)
+	req.Header.Add(clientIDHeader, id.New())
+	req.Header.Add(clientSecretHeader, id.New())
+	res := performTestRequest(server.Handler, req)
+
+	assert.Equal(http.StatusPreconditionRequired, res.Code)
+}
+
+func TestJoinSession(t *testing.T) {
+	assert := assert.New(t)
+	e, ctx := createTestEnv()
+	defer e.db.Close()
+	server := newServer(e)
+
+	repo := repository.NewSessionRepository(e.db)
+	session := models.Session{
+		ID:          id.New(),
+		Status:      models.StatusCreated,
+		RelayServer: "turn-2:3478",
+	}
+
+	err := repo.Save(ctx, session)
+	assert.NoError(err)
+
+	stored, err := repo.Find(ctx, session.ID)
+	assert.NoError(err)
+	assert.Len(stored.Participants, 0)
+
+	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
+	req.Header.Add(clientIDHeader, id.New())
+	req.Header.Add(clientSecretHeader, id.New())
+	performTestRequest(server.Handler, req)
+
+	time.Sleep(100 * time.Millisecond)
+	changed, err := repo.Find(ctx, session.ID)
+	assert.NoError(err)
+	assert.Len(changed.Participants, 1)
+}
+
 // ---- Test utils ----
 
 func createTestEnv() (*env, context.Context) {
@@ -161,7 +207,12 @@ func createTestEnv() (*env, context.Context) {
 
 	db := dbutil.MustConnect(cfg.db)
 
-	err := dbutil.Downgrade(cfg.migrationsPath, cfg.db.Driver(), db)
+	_, err := db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		log.Panic("Failed to enable foreign_keys", zap.Error(err))
+	}
+
+	err = dbutil.Downgrade(cfg.migrationsPath, cfg.db.Driver(), db)
 	if err != nil {
 		log.Panic("Failed to apply downgrade migratons", zap.Error(err))
 	}

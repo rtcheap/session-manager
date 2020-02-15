@@ -22,35 +22,40 @@ func (e *env) createSession(c *gin.Context) {
 
 	creds, httpErr := extractCredentials(c)
 	if httpErr != nil {
-		span.LogFields(tracelog.Bool("success", false), tracelog.Error(httpErr))
+		span.LogFields(tracelog.Error(httpErr))
 		c.Error(httpErr)
 		return
 	}
 
 	ref, err := e.sessionService.Create(ctx, creds)
 	if err != nil {
-		span.LogFields(tracelog.Bool("success", false), tracelog.Error(err))
+		span.LogFields(tracelog.Error(err))
 		c.Error(err)
 		return
 	}
 
-	span.LogFields(tracelog.Bool("success", true))
 	c.JSON(http.StatusOK, ref)
 }
 
 func (e *env) joinSession(c *gin.Context) {
-	span, _ := opentracing.StartSpanFromContext(c.Request.Context(), "controller.joinSession")
+	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "controller.joinSession")
 	defer span.Finish()
 
-	_, httpErr := extractCredentials(c)
+	creds, httpErr := extractCredentials(c)
 	if httpErr != nil {
-		span.LogFields(tracelog.Bool("success", false), tracelog.Error(httpErr))
+		span.LogFields(tracelog.Error(httpErr))
 		c.Error(httpErr)
 		return
 	}
 
-	span.LogFields(tracelog.Bool("success", true))
-	httputil.SendOK(c)
+	offer, err := e.sessionService.Join(ctx, c.Param("sessionId"), creds)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, offer)
 }
 
 func extractCredentials(c *gin.Context) (models.Credentials, *httputil.Error) {
