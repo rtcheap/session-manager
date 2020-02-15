@@ -88,6 +88,7 @@ func setupEnv() *env {
 		db:          db,
 		traceCloser: closer,
 		sessionService: service.SessionService{
+			Issuer:          jwt.NewIssuer(cfg.jwtCredentials),
 			RelayPort:       cfg.turn.udpPort,
 			TurnRPCProtocol: cfg.turn.rpcProtocol,
 			SessionRepo:     repository.NewSessionRepository(db),

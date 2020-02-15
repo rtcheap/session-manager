@@ -9,6 +9,7 @@ import (
 
 	"github.com/CzarSimon/httputil"
 	"github.com/CzarSimon/httputil/id"
+	"github.com/CzarSimon/httputil/jwt"
 	"github.com/CzarSimon/httputil/logger"
 	"github.com/opentracing/opentracing-go"
 	tracelog "github.com/opentracing/opentracing-go/log"
@@ -44,6 +45,7 @@ var (
 
 // SessionService service to manage sessions.
 type SessionService struct {
+	Issuer          jwt.Issuer
 	TurnRPCProtocol string
 	RelayPort       int
 	SessionRepo     repository.SessionRepository

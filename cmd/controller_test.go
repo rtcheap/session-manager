@@ -228,6 +228,7 @@ func createTestEnv() (*env, context.Context) {
 		cfg: cfg,
 		db:  db,
 		sessionService: service.SessionService{
+			Issuer:          jwt.NewIssuer(cfg.jwtCredentials),
 			TurnRPCProtocol: cfg.turn.rpcProtocol,
 			RelayPort:       cfg.turn.udpPort,
 			SessionRepo:     sessionRepo,
