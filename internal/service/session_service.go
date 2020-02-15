@@ -104,17 +104,16 @@ func (s *SessionService) assignSessionToTurnServer(ctx context.Context) (models.
 
 	services, err := s.RegistryClient.FindByApplication(ctx, "turn-server", true)
 	if err != nil {
-		span.LogFields(tracelog.Bool("success", false), tracelog.Error(err))
+		span.LogFields(tracelog.Error(err))
 		return models.Session{}, httputil.BadGatewayError(err)
 	}
 
 	best, err := s.findBestTurnServer(ctx, services)
 	if err != nil {
-		span.LogFields(tracelog.Bool("success", false), tracelog.Error(err))
+		span.LogFields(tracelog.Error(err))
 		return models.Session{}, err
 	}
 
-	span.LogFields(tracelog.Bool("success", true))
 	return models.Session{
 		ID:          id.New(),
 		Status:      models.StatusCreated,
@@ -148,6 +147,16 @@ func (s *SessionService) findBestTurnServer(ctx context.Context, services []dto.
 	}
 	wg.Wait()
 
+	best, err := leastConnTurnServer(services, connections)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return dto.Service{}, err
+	}
+
+	return best, nil
+}
+
+func leastConnTurnServer(services []dto.Service, connections []uint64) (dto.Service, error) {
 	var best dto.Service
 	var least uint64 = math.MaxUint64
 	for i, conns := range connections {
@@ -159,10 +168,8 @@ func (s *SessionService) findBestTurnServer(ctx context.Context, services []dto.
 
 	if best.ID == "" {
 		err := httputil.InternalServerError(errors.New("no turn-server found"))
-		span.LogFields(tracelog.Bool("success", false), tracelog.Error(err))
 		return dto.Service{}, err
 	}
 
-	span.LogFields(tracelog.Bool("success", true))
 	return best, nil
 }
