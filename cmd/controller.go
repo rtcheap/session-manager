@@ -55,7 +55,7 @@ func (e *env) joinSession(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, offer)
+	c.JSON(http.StatusSwitchingProtocols, offer)
 }
 
 func extractCredentials(c *gin.Context) (models.Credentials, *httputil.Error) {

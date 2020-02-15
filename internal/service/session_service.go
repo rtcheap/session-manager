@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/CzarSimon/httputil"
 	"github.com/CzarSimon/httputil/id"
@@ -43,6 +44,13 @@ var (
 	)
 )
 
+// SessionOtps session options.
+type SessionOtps struct {
+	TurnRPCProtocol string
+	RelayPort       int
+	SessionKey      string
+}
+
 // SessionService service to manage sessions.
 type SessionService struct {
 	Issuer          jwt.Issuer
@@ -64,17 +72,52 @@ func (s *SessionService) Join(ctx context.Context, sessionID string, creds model
 		SessionID: sessionID,
 	}
 
-	// TODO: Register participant
-
-	err := s.SessionRepo.SaveParticipant(ctx, participant)
+	err := s.registerParticipant(ctx, participant)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
-		return models.SessionOffer{}, httputil.PreconditionRequiredError(err)
+		return models.SessionOffer{}, err
 	}
 
-	// TODO: create offer
+	err = s.SessionRepo.SaveParticipant(ctx, participant)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return models.SessionOffer{}, err
+	}
+
+	offer, err := s.createOffer(ctx, participant)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return models.SessionOffer{}, err
+	}
+
 	joinsTotal.WithLabelValues().Inc()
-	return models.SessionOffer{}, nil
+	return offer, nil
+}
+
+// registerParticipant registers a participants to join a session on a turn server.
+func (s *SessionService) registerParticipant(ctx context.Context, p models.Participant) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_register_participant")
+	defer span.Finish()
+
+	svc, err := s.findTurnServer(ctx, p.SessionID)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return err
+	}
+
+	userSession := dto.Session{
+		UserID: p.UserID,
+		Key:    p.SessionID,
+	}
+
+	turnURL := fmt.Sprintf("%s://%s:%d", s.TurnRPCProtocol, svc.Location, svc.Port)
+	err = s.TurnClient.Register(ctx, turnURL, userSession)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return httputil.BadGatewayError(err)
+	}
+
+	return nil
 }
 
 // Create creates a sesssion.
@@ -117,7 +160,7 @@ func (s *SessionService) assignSessionToTurnServer(ctx context.Context) (models.
 	return models.Session{
 		ID:          id.New(),
 		Status:      models.StatusCreated,
-		RelayServer: fmt.Sprintf("%s:%d", best.Location, s.RelayPort),
+		RelayServer: best.ID,
 	}, nil
 }
 
@@ -172,4 +215,59 @@ func leastConnTurnServer(services []dto.Service, connections []uint64) (dto.Serv
 	}
 
 	return best, nil
+}
+
+// createOffer creates an ice offer for session participants to use to connect.
+func (s *SessionService) createOffer(ctx context.Context, p models.Participant) (models.SessionOffer, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_service_create_offer")
+	defer span.Finish()
+
+	jwtUser := jwt.User{
+		ID:    p.UserID,
+		Roles: []string{"USER"},
+	}
+
+	token, err := s.Issuer.Issue(jwtUser, 24*time.Hour)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return models.SessionOffer{}, err
+	}
+
+	svc, err := s.findTurnServer(ctx, p.SessionID)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return models.SessionOffer{}, err
+	}
+
+	offer := models.SessionOffer{
+		Token: token,
+		TRUN: models.TurnCandidate{
+			URL:      fmt.Sprintf("turn:%s:%d", svc.Location, s.RelayPort),
+			Username: p.UserID,
+		},
+		STUN: models.StunCandidate{
+			URL: fmt.Sprintf("stun:%s:%d", svc.Location, s.RelayPort),
+		},
+	}
+
+	return offer, nil
+}
+
+func (s *SessionService) findTurnServer(ctx context.Context, sessionID string) (dto.Service, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_service_find_turn_server")
+	defer span.Finish()
+
+	session, err := s.SessionRepo.Find(ctx, sessionID)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return dto.Service{}, httputil.PreconditionRequiredError(err)
+	}
+
+	svc, err := s.RegistryClient.Find(ctx, session.RelayServer)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return dto.Service{}, httputil.BadGatewayError(err)
+	}
+
+	return svc, nil
 }

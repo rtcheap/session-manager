@@ -2,7 +2,7 @@
 CREATE TABLE `session` (
   `id` VARCHAR(50) NOT NULL,
   `status` VARCHAR(20) NOT NULL,
-  `relay_server` VARCHAR(100) NOT NULL,
+  `relay_server` VARCHAR(50) NOT NULL,
   `created_at` DATETIME NOT NULL,
   `updated_at` DATETIME NOT NULL,
   PRIMARY KEY (`id`)

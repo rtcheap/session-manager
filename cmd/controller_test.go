@@ -46,25 +46,28 @@ func TestCreateSession(t *testing.T) {
 	e, ctx := createTestEnv()
 	defer e.db.Close()
 
+	svc1ID := id.New()
+	svc2ID := id.New()
+	svc3ID := id.New()
 	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]mockResponse{
 		"GET:http://service-registry:8080/v1/services?application=turn-server&only-healthy=true": mockResponse{
 			body: []dto.Service{
 				dto.Service{
-					ID:          id.New(),
+					ID:          svc1ID,
 					Application: "turn-server",
 					Location:    "turn-1",
-					Port:        8080,
+					Port:        8081,
 					Status:      dto.StatusHealty,
 				},
 				dto.Service{
-					ID:          id.New(),
+					ID:          svc2ID,
 					Application: "turn-server",
 					Location:    "turn-2",
 					Port:        8080,
 					Status:      dto.StatusHealty,
 				},
 				dto.Service{
-					ID:          id.New(),
+					ID:          svc3ID,
 					Application: "turn-server",
 					Location:    "turn-3",
 					Port:        8080,
@@ -78,7 +81,7 @@ func TestCreateSession(t *testing.T) {
 	e.sessionService.RegistryClient = serviceregistry.NewClient(mockRegistryClient)
 
 	mockTurnClient := MockClient("", jwt.SystemRole, map[string]mockResponse{
-		"GET:http://turn-1:8080/v1/sessions/statistics": mockResponse{
+		"GET:http://turn-1:8081/v1/sessions/statistics": mockResponse{
 			body: dto.SessionStatistics{
 				Started: 150,
 				Ended:   50,
@@ -121,7 +124,7 @@ func TestCreateSession(t *testing.T) {
 	assert.Equal(ref.ID, session.ID)
 	assert.Equal(models.StatusCreated, session.Status)
 	assert.Len(session.Participants, 0)
-	assert.Equal(session.RelayServer, "turn-2:3478")
+	assert.Equal(session.RelayServer, svc2ID)
 	assert.True(session.CreatedAt.After(beforeRequest))
 	assert.True(session.UpdatedAt.After(beforeRequest))
 }
@@ -161,17 +164,45 @@ func TestJoinSession_NoSession(t *testing.T) {
 	assert.Equal(http.StatusPreconditionRequired, res.Code)
 }
 
-func TestJoinSession(t *testing.T) {
+func TestJoinSession_BadGateway_TurnServer(t *testing.T) {
 	assert := assert.New(t)
 	e, ctx := createTestEnv()
 	defer e.db.Close()
 	server := newServer(e)
 
+	type statusRes struct {
+		Status string `json:"status,omitempty"`
+	}
+
+	turnID := id.New()
+	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]mockResponse{
+		"GET:http://service-registry:8080/v1/services/" + turnID: mockResponse{
+			body: dto.Service{
+				ID:          turnID,
+				Application: "turn-server",
+				Location:    "assigned-turn",
+				Port:        8083,
+				Status:      dto.StatusHealty,
+			},
+			err: nil,
+		},
+	})
+
+	e.sessionService.RegistryClient = serviceregistry.NewClient(mockRegistryClient)
+
+	mockTurnClient := MockClient("", jwt.SystemRole, map[string]mockResponse{
+		"POST:http://assigned-turn:8083/v1/sessions": mockResponse{
+			err: httputil.InternalServerError(nil),
+		},
+	})
+
+	e.sessionService.TurnClient = turnserver.NewClient(mockTurnClient)
+
 	repo := repository.NewSessionRepository(e.db)
 	session := models.Session{
 		ID:          id.New(),
 		Status:      models.StatusCreated,
-		RelayServer: "turn-2:3478",
+		RelayServer: turnID,
 	}
 
 	err := repo.Save(ctx, session)
@@ -184,9 +215,114 @@ func TestJoinSession(t *testing.T) {
 	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
 	req.Header.Add(clientIDHeader, id.New())
 	req.Header.Add(clientSecretHeader, id.New())
-	performTestRequest(server.Handler, req)
+	res := performTestRequest(server.Handler, req)
+	assert.Equal(http.StatusBadGateway, res.Code)
 
-	time.Sleep(100 * time.Millisecond)
+	unchanged, err := repo.Find(ctx, session.ID)
+	assert.NoError(err)
+	assert.Len(unchanged.Participants, 0)
+}
+
+func TestJoinSession_BadGateway_ServiceRegistry(t *testing.T) {
+	assert := assert.New(t)
+	e, ctx := createTestEnv()
+	defer e.db.Close()
+	server := newServer(e)
+
+	type statusRes struct {
+		Status string `json:"status,omitempty"`
+	}
+
+	turnID := id.New()
+	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]mockResponse{
+		"GET:http://service-registry:8080/v1/services/" + turnID: mockResponse{
+			err: httputil.InternalServerError(nil),
+		},
+	})
+
+	e.sessionService.RegistryClient = serviceregistry.NewClient(mockRegistryClient)
+
+	repo := repository.NewSessionRepository(e.db)
+	session := models.Session{
+		ID:          id.New(),
+		Status:      models.StatusCreated,
+		RelayServer: turnID,
+	}
+
+	err := repo.Save(ctx, session)
+	assert.NoError(err)
+
+	stored, err := repo.Find(ctx, session.ID)
+	assert.NoError(err)
+	assert.Len(stored.Participants, 0)
+
+	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
+	req.Header.Add(clientIDHeader, id.New())
+	req.Header.Add(clientSecretHeader, id.New())
+	res := performTestRequest(server.Handler, req)
+	assert.Equal(http.StatusBadGateway, res.Code)
+
+	unchanged, err := repo.Find(ctx, session.ID)
+	assert.NoError(err)
+	assert.Len(unchanged.Participants, 0)
+}
+
+func TestJoinSession(t *testing.T) {
+	assert := assert.New(t)
+	e, ctx := createTestEnv()
+	defer e.db.Close()
+	server := newServer(e)
+
+	type statusRes struct {
+		Status string `json:"status,omitempty"`
+	}
+
+	turnID := id.New()
+	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]mockResponse{
+		"GET:http://service-registry:8080/v1/services/" + turnID: mockResponse{
+			body: dto.Service{
+				ID:          turnID,
+				Application: "turn-server",
+				Location:    "assigned-turn",
+				Port:        8083,
+				Status:      dto.StatusHealty,
+			},
+			err: nil,
+		},
+	})
+
+	e.sessionService.RegistryClient = serviceregistry.NewClient(mockRegistryClient)
+
+	mockTurnClient := MockClient("", jwt.SystemRole, map[string]mockResponse{
+		"POST:http://assigned-turn:8083/v1/sessions": mockResponse{
+			body: statusRes{Status: "OK"},
+			err:  nil,
+		},
+	})
+
+	e.sessionService.TurnClient = turnserver.NewClient(mockTurnClient)
+
+	repo := repository.NewSessionRepository(e.db)
+	session := models.Session{
+		ID:          id.New(),
+		Status:      models.StatusCreated,
+		RelayServer: turnID,
+	}
+
+	err := repo.Save(ctx, session)
+	assert.NoError(err)
+
+	stored, err := repo.Find(ctx, session.ID)
+	assert.NoError(err)
+	assert.Len(stored.Participants, 0)
+
+	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
+	req.Header.Add(clientIDHeader, id.New())
+	req.Header.Add(clientSecretHeader, id.New())
+	res := performTestRequest(server.Handler, req)
+	assert.Equal(http.StatusSwitchingProtocols, res.Code)
+
+	time.Sleep(50 * time.Millisecond)
 	changed, err := repo.Find(ctx, session.ID)
 	assert.NoError(err)
 	assert.Len(changed.Participants, 1)
