@@ -1,12 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -49,9 +45,9 @@ func TestCreateSession(t *testing.T) {
 	svc1ID := id.New()
 	svc2ID := id.New()
 	svc3ID := id.New()
-	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]mockResponse{
-		"GET:http://service-registry:8080/v1/services?application=turn-server&only-healthy=true": mockResponse{
-			body: []dto.Service{
+	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]rpc.MockResponse{
+		"GET:http://service-registry:8080/v1/services?application=turn-server&only-healthy=true": rpc.MockResponse{
+			Body: []dto.Service{
 				dto.Service{
 					ID:          svc1ID,
 					Application: "turn-server",
@@ -74,30 +70,30 @@ func TestCreateSession(t *testing.T) {
 					Status:      dto.StatusHealty,
 				},
 			},
-			err: nil,
+			Err: nil,
 		},
 	})
 
 	e.sessionService.RegistryClient = serviceregistry.NewClient(mockRegistryClient)
 
-	mockTurnClient := MockClient("", jwt.SystemRole, map[string]mockResponse{
-		"GET:http://turn-1:8081/v1/sessions/statistics": mockResponse{
-			body: dto.SessionStatistics{
+	mockTurnClient := MockClient("", jwt.SystemRole, map[string]rpc.MockResponse{
+		"GET:http://turn-1:8081/v1/sessions/statistics": rpc.MockResponse{
+			Body: dto.SessionStatistics{
 				Started: 150,
 				Ended:   50,
 			},
-			err: nil,
+			Err: nil,
 		},
-		"GET:http://turn-2:8080/v1/sessions/statistics": mockResponse{
-			body: dto.SessionStatistics{
+		"GET:http://turn-2:8080/v1/sessions/statistics": rpc.MockResponse{
+			Body: dto.SessionStatistics{
 				Started: 100,
 				Ended:   50,
 			},
-			err: nil,
+			Err: nil,
 		},
-		"GET:http://turn-3:8080/v1/sessions/statistics": mockResponse{
-			body: nil,
-			err:  httputil.ServiceUnavailableError(nil),
+		"GET:http://turn-3:8080/v1/sessions/statistics": rpc.MockResponse{
+			Body: nil,
+			Err:  httputil.ServiceUnavailableError(nil),
 		},
 	})
 
@@ -175,24 +171,24 @@ func TestJoinSession_BadGateway_TurnServer(t *testing.T) {
 	}
 
 	turnID := id.New()
-	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]mockResponse{
-		"GET:http://service-registry:8080/v1/services/" + turnID: mockResponse{
-			body: dto.Service{
+	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]rpc.MockResponse{
+		"GET:http://service-registry:8080/v1/services/" + turnID: rpc.MockResponse{
+			Body: dto.Service{
 				ID:          turnID,
 				Application: "turn-server",
 				Location:    "assigned-turn",
 				Port:        8083,
 				Status:      dto.StatusHealty,
 			},
-			err: nil,
+			Err: nil,
 		},
 	})
 
 	e.sessionService.RegistryClient = serviceregistry.NewClient(mockRegistryClient)
 
-	mockTurnClient := MockClient("", jwt.SystemRole, map[string]mockResponse{
-		"POST:http://assigned-turn:8083/v1/sessions": mockResponse{
-			err: httputil.InternalServerError(nil),
+	mockTurnClient := MockClient("", jwt.SystemRole, map[string]rpc.MockResponse{
+		"POST:http://assigned-turn:8083/v1/sessions": rpc.MockResponse{
+			Err: httputil.InternalServerError(nil),
 		},
 	})
 
@@ -234,9 +230,9 @@ func TestJoinSession_BadGateway_ServiceRegistry(t *testing.T) {
 	}
 
 	turnID := id.New()
-	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]mockResponse{
-		"GET:http://service-registry:8080/v1/services/" + turnID: mockResponse{
-			err: httputil.InternalServerError(nil),
+	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]rpc.MockResponse{
+		"GET:http://service-registry:8080/v1/services/" + turnID: rpc.MockResponse{
+			Err: httputil.InternalServerError(nil),
 		},
 	})
 
@@ -278,52 +274,50 @@ func TestJoinSession(t *testing.T) {
 	}
 
 	turnID := id.New()
-	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]mockResponse{
-		"GET:http://service-registry:8080/v1/services/" + turnID: mockResponse{
-			body: dto.Service{
+	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]rpc.MockResponse{
+		"GET:http://service-registry:8080/v1/services/" + turnID: rpc.MockResponse{
+			Body: dto.Service{
 				ID:          turnID,
 				Application: "turn-server",
 				Location:    "assigned-turn",
 				Port:        8083,
 				Status:      dto.StatusHealty,
 			},
-			err: nil,
+			Err: nil,
 		},
 	})
 
 	e.sessionService.RegistryClient = serviceregistry.NewClient(mockRegistryClient)
 
-	mockTurnClient := MockClient("", jwt.SystemRole, map[string]mockResponse{
-		"POST:http://assigned-turn:8083/v1/sessions": mockResponse{
-			body: statusRes{Status: "OK"},
-			err:  nil,
+	mockTurnClient := MockClient("", jwt.SystemRole, map[string]rpc.MockResponse{
+		"POST:http://assigned-turn:8083/v1/sessions": rpc.MockResponse{
+			Body: statusRes{Status: "OK"},
+			Err:  nil,
 		},
 	})
 
 	e.sessionService.TurnClient = turnserver.NewClient(mockTurnClient)
 
-	repo := repository.NewSessionRepository(e.db)
 	session := models.Session{
 		ID:          id.New(),
 		Status:      models.StatusCreated,
 		RelayServer: turnID,
 	}
 
-	err := repo.Save(ctx, session)
+	err := e.sessionService.SessionRepo.Save(ctx, session)
 	assert.NoError(err)
 
-	stored, err := repo.Find(ctx, session.ID)
+	stored, err := e.sessionService.SessionRepo.Find(ctx, session.ID)
 	assert.NoError(err)
 	assert.Len(stored.Participants, 0)
 
 	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
 	req.Header.Add(clientIDHeader, id.New())
 	req.Header.Add(clientSecretHeader, id.New())
-	res := performTestRequest(server.Handler, req)
-	assert.Equal(http.StatusSwitchingProtocols, res.Code)
+	performTestRequest(server.Handler, req)
 
 	time.Sleep(50 * time.Millisecond)
-	changed, err := repo.Find(ctx, session.ID)
+	changed, err := e.sessionService.SessionRepo.Find(ctx, session.ID)
 	assert.NoError(err)
 	assert.Len(changed.Participants, 1)
 }
@@ -415,14 +409,9 @@ func getTestJWTCredentials() jwt.Credentials {
 	}
 }
 
-type mockRPCClient struct {
-	rpc.Client
-	Responses map[string]mockResponse
-}
-
-func MockClient(baseURL, role string, reponses map[string]mockResponse) client.Client {
+func MockClient(baseURL, role string, reponses map[string]rpc.MockResponse) client.Client {
 	c := client.Client{
-		RPCClient: &mockRPCClient{
+		RPCClient: &rpc.MockClient{
 			Client:    rpc.NewClient(time.Second),
 			Responses: reponses,
 		},
@@ -433,49 +422,4 @@ func MockClient(baseURL, role string, reponses map[string]mockResponse) client.C
 	}
 
 	return c
-}
-
-type mockResponse struct {
-	body interface{}
-	err  error
-}
-
-func (c *mockRPCClient) Do(req *http.Request) (*http.Response, error) {
-	time.Sleep(10 * time.Millisecond)
-	key := fmt.Sprintf("%s:%s", req.Method, req.URL)
-	mockRes, ok := c.Responses[key]
-	if !ok {
-		err := fmt.Errorf("could not find uri %s", key)
-		return nil, httputil.NotFoundError(err)
-	}
-
-	if mockRes.err != nil {
-		return nil, mockRes.err
-	}
-
-	var body io.ReadCloser
-	headers := http.Header{}
-	if mockRes.body != nil {
-		bytesBody, err := json.Marshal(mockRes.body)
-		if err != nil {
-			return nil, err
-		}
-		body = ioutil.NopCloser(bytes.NewBuffer(bytesBody))
-		headers.Add("Content-Type", "application/json")
-	} else {
-		body = http.NoBody
-	}
-
-	status := http.StatusOK
-	res := &http.Response{
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Status:     fmt.Sprintf("%d - %s", status, http.StatusText(status)),
-		StatusCode: status,
-		Body:       body,
-		Header:     headers,
-	}
-
-	return res, nil
 }

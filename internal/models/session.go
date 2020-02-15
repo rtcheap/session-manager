@@ -57,7 +57,7 @@ func (p Participant) String() string {
 // SessionOffer metadata required for creating a peer-to-peer session.
 type SessionOffer struct {
 	Token string        `json:"token,omitempty"`
-	TRUN  TurnCandidate `json:"trun,omitempty"`
+	TURN  TurnCandidate `json:"turn,omitempty"`
 	STUN  StunCandidate `json:"stun,omitempty"`
 }
 

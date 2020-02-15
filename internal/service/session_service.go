@@ -72,7 +72,7 @@ func (s *SessionService) Join(ctx context.Context, sessionID string, creds model
 		SessionID: sessionID,
 	}
 
-	err := s.registerParticipant(ctx, participant)
+	svc, err := s.registerParticipant(ctx, participant)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
 		return models.SessionOffer{}, err
@@ -84,7 +84,7 @@ func (s *SessionService) Join(ctx context.Context, sessionID string, creds model
 		return models.SessionOffer{}, err
 	}
 
-	offer, err := s.createOffer(ctx, participant)
+	offer, err := s.createOffer(ctx, participant, svc)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
 		return models.SessionOffer{}, err
@@ -95,14 +95,14 @@ func (s *SessionService) Join(ctx context.Context, sessionID string, creds model
 }
 
 // registerParticipant registers a participants to join a session on a turn server.
-func (s *SessionService) registerParticipant(ctx context.Context, p models.Participant) error {
+func (s *SessionService) registerParticipant(ctx context.Context, p models.Participant) (dto.Service, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_register_participant")
 	defer span.Finish()
 
 	svc, err := s.findTurnServer(ctx, p.SessionID)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
-		return err
+		return dto.Service{}, err
 	}
 
 	userSession := dto.Session{
@@ -114,10 +114,10 @@ func (s *SessionService) registerParticipant(ctx context.Context, p models.Parti
 	err = s.TurnClient.Register(ctx, turnURL, userSession)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
-		return httputil.BadGatewayError(err)
+		return dto.Service{}, httputil.BadGatewayError(err)
 	}
 
-	return nil
+	return svc, nil
 }
 
 // Create creates a sesssion.
@@ -218,7 +218,7 @@ func leastConnTurnServer(services []dto.Service, connections []uint64) (dto.Serv
 }
 
 // createOffer creates an ice offer for session participants to use to connect.
-func (s *SessionService) createOffer(ctx context.Context, p models.Participant) (models.SessionOffer, error) {
+func (s *SessionService) createOffer(ctx context.Context, p models.Participant, svc dto.Service) (models.SessionOffer, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_service_create_offer")
 	defer span.Finish()
 
@@ -233,15 +233,9 @@ func (s *SessionService) createOffer(ctx context.Context, p models.Participant) 
 		return models.SessionOffer{}, err
 	}
 
-	svc, err := s.findTurnServer(ctx, p.SessionID)
-	if err != nil {
-		span.LogFields(tracelog.Error(err))
-		return models.SessionOffer{}, err
-	}
-
 	offer := models.SessionOffer{
 		Token: token,
-		TRUN: models.TurnCandidate{
+		TURN: models.TurnCandidate{
 			URL:      fmt.Sprintf("turn:%s:%d", svc.Location, s.RelayPort),
 			Username: p.UserID,
 		},
