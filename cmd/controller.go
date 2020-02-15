@@ -17,7 +17,7 @@ const (
 )
 
 func (e *env) createSession(c *gin.Context) {
-	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "controller.createSession")
+	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "controller_create_session")
 	defer span.Finish()
 
 	creds, httpErr := extractCredentials(c)
@@ -38,7 +38,7 @@ func (e *env) createSession(c *gin.Context) {
 }
 
 func (e *env) joinSession(c *gin.Context) {
-	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "controller.joinSession")
+	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "controller_join_session")
 	defer span.Finish()
 
 	creds, httpErr := extractCredentials(c)

@@ -12,6 +12,8 @@ import (
 	"github.com/CzarSimon/httputil/logger"
 	"github.com/opentracing/opentracing-go"
 	tracelog "github.com/opentracing/opentracing-go/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rtcheap/dto"
 	"github.com/rtcheap/service-clients/go/serviceregistry"
 	"github.com/rtcheap/service-clients/go/turnserver"
@@ -21,6 +23,24 @@ import (
 )
 
 var log = logger.GetDefaultLogger("session-manager/service")
+
+// Prometheus metrics.
+var (
+	sessionsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sessions_created_total",
+			Help: "The total number of created sessions",
+		},
+		[]string{},
+	)
+	joinsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "session_joins_total",
+			Help: "The total number of created sessions",
+		},
+		[]string{},
+	)
+)
 
 // SessionService service to manage sessions.
 type SessionService struct {
@@ -33,7 +53,7 @@ type SessionService struct {
 
 // Join adds a user as a session participant.
 func (s *SessionService) Join(ctx context.Context, sessionID string, creds models.Credentials) (models.SessionOffer, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "service.SessionService.Join")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_service_join")
 	defer span.Finish()
 
 	participant := models.Participant{
@@ -51,13 +71,13 @@ func (s *SessionService) Join(ctx context.Context, sessionID string, creds model
 	}
 
 	// TODO: create offer
-
+	joinsTotal.WithLabelValues().Inc()
 	return models.SessionOffer{}, nil
 }
 
 // Create creates a sesssion.
 func (s *SessionService) Create(ctx context.Context, creds models.Credentials) (dto.Reference, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "service.SessionService.Create")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_service_create")
 	defer span.Finish()
 
 	session, err := s.assignSessionToTurnServer(ctx)
@@ -72,11 +92,12 @@ func (s *SessionService) Create(ctx context.Context, creds models.Credentials) (
 		return dto.Reference{}, err
 	}
 
+	sessionsTotal.WithLabelValues().Inc()
 	return dto.Reference{ID: session.ID, System: "session-manager/session"}, nil
 }
 
 func (s *SessionService) assignSessionToTurnServer(ctx context.Context) (models.Session, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "service.SessionService.assignSessionToTurnServer")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_service_assign_session_to_turn_server")
 	defer span.Finish()
 
 	services, err := s.RegistryClient.FindByApplication(ctx, "turn-server", true)
@@ -100,7 +121,7 @@ func (s *SessionService) assignSessionToTurnServer(ctx context.Context) (models.
 }
 
 func (s *SessionService) findBestTurnServer(ctx context.Context, services []dto.Service) (dto.Service, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "service.SessionService.findBestTurnServer")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_service_find_best_turn_server")
 	defer span.Finish()
 
 	connections := make([]uint64, len(services))
