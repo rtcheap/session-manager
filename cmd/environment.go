@@ -97,7 +97,8 @@ func setupEnv() *env {
 	}
 
 	messageService := &service.MessageService{
-		Socket: service.NewWebsocketHandler(),
+		Socket:         service.NewWebsocketHandler(),
+		SessionService: sessionService,
 	}
 
 	return &env{

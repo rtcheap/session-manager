@@ -9,6 +9,9 @@ export JWT_SECRET='password'
 export SERVICE_PORT='8082'
 
 export SESSIONREGISTRY_URL='http://localhost:8080'
+export SESSION_SECRET='super-secret-session-secret'
+export TURN_UDP_PORT='3478'
+export TURN_RPC_PROTOCOL='http'
 
 export DB_HOST='127.0.0.1'
 export DB_PORT='3306'

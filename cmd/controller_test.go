@@ -254,9 +254,9 @@ func TestJoinSession_BadGateway_ServiceRegistry(t *testing.T) {
 	assert.NoError(err)
 	assert.Len(stored.Participants, 0)
 
-	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodGet, "", nil)
-	req.Header.Add(clientIDHeader, id.New())
-	req.Header.Add(clientSecretHeader, id.New())
+	url := fmt.Sprintf("/v1/sessions/%s?client-id=%s&client-secret=%s", session.ID, id.New(), id.New())
+	req := createTestRequest(url, http.MethodGet, "", nil)
+
 	res := performTestRequest(server.Handler, req)
 	assert.Equal(http.StatusBadGateway, res.Code)
 

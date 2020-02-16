@@ -60,6 +60,16 @@ func extractCredentials(c *gin.Context) (models.Credentials, *httputil.Error) {
 	clientID := c.GetHeader(clientIDHeader)
 	clientSecret := c.GetHeader(clientSecretHeader)
 
+	if clientID == "" {
+		val, _ := httputil.ParseQueryValue(c, "client-id")
+		clientID = val
+	}
+
+	if clientSecret == "" {
+		val, _ := httputil.ParseQueryValue(c, "client-secret")
+		clientSecret = val
+	}
+
 	if clientID == "" || clientSecret == "" {
 		err := errors.New("clientId or clientSecret is missing")
 		return models.Credentials{}, httputil.UnauthorizedError(err)

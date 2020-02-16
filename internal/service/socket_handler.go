@@ -55,8 +55,13 @@ type WebsocketHandler struct {
 
 // NewWebsocketHandler creates a new WebsocketHandler.
 func NewWebsocketHandler() *WebsocketHandler {
+	allowOrigin := func(r *http.Request) bool {
+		return true
+	}
 	return &WebsocketHandler{
-		upgrader: &websocket.Upgrader{},
+		upgrader: &websocket.Upgrader{
+			CheckOrigin: allowOrigin,
+		},
 		mu:       sync.RWMutex{},
 		channels: make(map[string]*channel),
 	}
