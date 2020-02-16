@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"github.com/CzarSimon/httputil/dbutil"
 	"github.com/CzarSimon/httputil/id"
 	"github.com/CzarSimon/httputil/jwt"
+	"github.com/gorilla/websocket"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/opentracing/opentracing-go"
 	"github.com/rtcheap/dto"
@@ -139,7 +141,7 @@ func TestJoinSession_NoCredentials(t *testing.T) {
 	err := repository.NewSessionRepository(e.db).Save(ctx, session)
 	assert.NoError(err)
 
-	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
+	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodGet, "", nil)
 	res := performTestRequest(server.Handler, req)
 
 	assert.Equal(http.StatusUnauthorized, res.Code)
@@ -152,7 +154,7 @@ func TestJoinSession_NoSession(t *testing.T) {
 	server := newServer(e)
 
 	sessionID := id.New()
-	req := createTestRequest("/v1/sessions/"+sessionID, http.MethodPut, "", nil)
+	req := createTestRequest("/v1/sessions/"+sessionID, http.MethodGet, "", nil)
 	req.Header.Add(clientIDHeader, id.New())
 	req.Header.Add(clientSecretHeader, id.New())
 	res := performTestRequest(server.Handler, req)
@@ -208,7 +210,7 @@ func TestJoinSession_BadGateway_TurnServer(t *testing.T) {
 	assert.NoError(err)
 	assert.Len(stored.Participants, 0)
 
-	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
+	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodGet, "", nil)
 	req.Header.Add(clientIDHeader, id.New())
 	req.Header.Add(clientSecretHeader, id.New())
 	res := performTestRequest(server.Handler, req)
@@ -252,7 +254,7 @@ func TestJoinSession_BadGateway_ServiceRegistry(t *testing.T) {
 	assert.NoError(err)
 	assert.Len(stored.Participants, 0)
 
-	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
+	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodGet, "", nil)
 	req.Header.Add(clientIDHeader, id.New())
 	req.Header.Add(clientSecretHeader, id.New())
 	res := performTestRequest(server.Handler, req)
@@ -311,10 +313,39 @@ func TestJoinSession(t *testing.T) {
 	assert.NoError(err)
 	assert.Len(stored.Participants, 0)
 
-	req := createTestRequest("/v1/sessions/"+session.ID, http.MethodPut, "", nil)
-	req.Header.Add(clientIDHeader, id.New())
-	req.Header.Add(clientSecretHeader, id.New())
-	performTestRequest(server.Handler, req)
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil {
+			log.Error("unexpected error closing server", zap.Error(err))
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	headers := http.Header{}
+	headers.Add(clientIDHeader, id.New())
+	headers.Add(clientSecretHeader, id.New())
+
+	url := fmt.Sprintf("ws://127.0.0.1:%s/v1/sessions/%s", e.cfg.port, session.ID)
+	conn, res, err := websocket.DefaultDialer.Dial(url, headers)
+	assert.NoError(err)
+	if err == nil {
+		assert.Equal(http.StatusSwitchingProtocols, res.StatusCode)
+		defer conn.Close()
+		for {
+			mt, data, err := conn.ReadMessage()
+			assert.NoError(err)
+			assert.Equal(websocket.TextMessage, mt)
+
+			var message models.Message
+			err = json.Unmarshal(data, &message)
+			assert.NoError(err)
+			assert.Equal(models.TypeOffer, message.Type)
+			assert.Equal(session.ID, message.SessionID)
+
+			break
+		}
+
+	}
 
 	time.Sleep(50 * time.Millisecond)
 	changed, err := e.sessionService.SessionRepo.Find(ctx, session.ID)
@@ -326,7 +357,8 @@ func TestJoinSession(t *testing.T) {
 
 func createTestEnv() (*env, context.Context) {
 	cfg := config{
-		db: dbutil.SqliteConfig{},
+		port: "34547",
+		db:   dbutil.SqliteConfig{},
 		turn: turnConfig{
 			udpPort:     3478,
 			rpcProtocol: "http",
@@ -353,16 +385,22 @@ func createTestEnv() (*env, context.Context) {
 	}
 
 	sessionRepo := repository.NewSessionRepository(db)
+	sessionService := &service.SessionService{
+		Issuer:          jwt.NewIssuer(cfg.jwtCredentials),
+		TurnRPCProtocol: cfg.turn.rpcProtocol,
+		RelayPort:       cfg.turn.udpPort,
+		SessionRepo:     sessionRepo,
+	}
+
+	messageService := &service.MessageService{
+		Socket: service.NewWebsocketHandler(),
+	}
 
 	e := &env{
-		cfg: cfg,
-		db:  db,
-		sessionService: service.SessionService{
-			Issuer:          jwt.NewIssuer(cfg.jwtCredentials),
-			TurnRPCProtocol: cfg.turn.rpcProtocol,
-			RelayPort:       cfg.turn.udpPort,
-			SessionRepo:     sessionRepo,
-		},
+		cfg:            cfg,
+		db:             db,
+		sessionService: sessionService,
+		messageService: messageService,
 	}
 
 	return e, context.Background()

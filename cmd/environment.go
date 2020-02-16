@@ -23,7 +23,8 @@ import (
 type env struct {
 	cfg            config
 	db             *sql.DB
-	sessionService service.SessionService
+	sessionService *service.SessionService
+	messageService *service.MessageService
 	traceCloser    io.Closer
 }
 
@@ -83,18 +84,25 @@ func setupEnv() *env {
 		UserAgent: "session-manager/turnserver.Client",
 	})
 
+	sessionService := &service.SessionService{
+		Issuer:          jwt.NewIssuer(cfg.jwtCredentials),
+		RelayPort:       cfg.turn.udpPort,
+		TurnRPCProtocol: cfg.turn.rpcProtocol,
+		SessionRepo:     repository.NewSessionRepository(db),
+		RegistryClient:  registryClient,
+		TurnClient:      turnClient,
+	}
+
+	messageService := &service.MessageService{
+		Socket: service.NewWebsocketHandler(),
+	}
+
 	return &env{
-		cfg:         cfg,
-		db:          db,
-		traceCloser: closer,
-		sessionService: service.SessionService{
-			Issuer:          jwt.NewIssuer(cfg.jwtCredentials),
-			RelayPort:       cfg.turn.udpPort,
-			TurnRPCProtocol: cfg.turn.rpcProtocol,
-			SessionRepo:     repository.NewSessionRepository(db),
-			RegistryClient:  registryClient,
-			TurnClient:      turnClient,
-		},
+		cfg:            cfg,
+		db:             db,
+		traceCloser:    closer,
+		sessionService: sessionService,
+		messageService: messageService,
 	}
 }
 

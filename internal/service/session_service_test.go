@@ -72,7 +72,7 @@ func TestJoinSession(t *testing.T) {
 		ClientID:     id.New(),
 		ClientSecret: id.New(),
 	}
-	offer, err := s.Join(ctx, session.ID, creds)
+	offer, participant, err := s.Join(ctx, session.ID, creds)
 	assert.NoError(err)
 	assert.Equal("turn:assigned-turn:3478", offer.TURN.URL)
 	assert.Equal("stun:assigned-turn:3478", offer.STUN.URL)
@@ -88,6 +88,7 @@ func TestJoinSession(t *testing.T) {
 	assert.NoError(err)
 	assert.Len(changed.Participants, 1)
 	assert.Equal(changed.Participants[0].UserID, user.ID)
+	assert.Equal(changed.Participants[0].ID, participant.ID)
 }
 
 func createService() (service.SessionService, context.Context) {

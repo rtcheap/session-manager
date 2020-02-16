@@ -30,7 +30,7 @@ var log = logger.GetDefaultLogger("session-manager/service")
 var (
 	sessionsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "sessions_created_total",
+			Name: "session_created_total",
 			Help: "The total number of created sessions",
 		},
 		[]string{},
@@ -62,7 +62,7 @@ type SessionService struct {
 }
 
 // Join adds a user as a session participant.
-func (s *SessionService) Join(ctx context.Context, sessionID string, creds models.Credentials) (models.SessionOffer, error) {
+func (s *SessionService) Join(ctx context.Context, sessionID string, creds models.Credentials) (models.SessionOffer, models.Participant, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "service_session_service_join")
 	defer span.Finish()
 
@@ -75,23 +75,23 @@ func (s *SessionService) Join(ctx context.Context, sessionID string, creds model
 	svc, err := s.registerParticipant(ctx, participant)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
-		return models.SessionOffer{}, err
+		return models.SessionOffer{}, models.Participant{}, err
 	}
 
 	err = s.SessionRepo.SaveParticipant(ctx, participant)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
-		return models.SessionOffer{}, err
+		return models.SessionOffer{}, models.Participant{}, err
 	}
 
 	offer, err := s.createOffer(ctx, participant, svc)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
-		return models.SessionOffer{}, err
+		return models.SessionOffer{}, models.Participant{}, err
 	}
 
 	joinsTotal.WithLabelValues().Inc()
-	return offer, nil
+	return offer, participant, nil
 }
 
 // registerParticipant registers a participants to join a session on a turn server.

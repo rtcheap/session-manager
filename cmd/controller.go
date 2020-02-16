@@ -48,14 +48,26 @@ func (e *env) joinSession(c *gin.Context) {
 		return
 	}
 
-	offer, err := e.sessionService.Join(ctx, c.Param("sessionId"), creds)
+	sessionID := c.Param("sessionId")
+	offer, participant, err := e.sessionService.Join(ctx, sessionID, creds)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
 		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusSwitchingProtocols, offer)
+	msg := models.Message{
+		Type:      models.TypeOffer,
+		SessionID: sessionID,
+		Body:      offer,
+	}
+
+	err = e.messageService.ConnectAndSend(ctx, participant, msg, c.Request, c.Writer)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		c.Error(err)
+		return
+	}
 }
 
 func extractCredentials(c *gin.Context) (models.Credentials, *httputil.Error) {
