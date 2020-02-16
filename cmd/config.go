@@ -15,6 +15,7 @@ type config struct {
 	sessionRegistry sessionRegistryConfig
 	turn            turnConfig
 	migrationsPath  string
+	sessionSecret   string
 	jwtCredentials  jwt.Credentials
 }
 
@@ -41,6 +42,7 @@ func getConfig() config {
 		turn:            getTurnConfig(),
 		sessionRegistry: getSessionRegistryConfig(),
 		migrationsPath:  environ.Get("MIGRATIONS_PATH", "/etc/service-registry/migrations"),
+		sessionSecret:   environ.MustGet("SESSION_SECRET"),
 		jwtCredentials:  getJwtCredentials(),
 	}
 }

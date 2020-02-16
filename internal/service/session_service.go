@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/CzarSimon/httputil"
+	"github.com/CzarSimon/httputil/crypto"
 	"github.com/CzarSimon/httputil/id"
 	"github.com/CzarSimon/httputil/jwt"
 	"github.com/CzarSimon/httputil/logger"
@@ -48,17 +50,16 @@ var (
 type SessionOtps struct {
 	TurnRPCProtocol string
 	RelayPort       int
-	SessionKey      string
+	SessionSecret   []byte
 }
 
 // SessionService service to manage sessions.
 type SessionService struct {
-	Issuer          jwt.Issuer
-	TurnRPCProtocol string
-	RelayPort       int
-	SessionRepo     repository.SessionRepository
-	RegistryClient  serviceregistry.Client
-	TurnClient      turnserver.Client
+	Issuer         jwt.Issuer
+	Opts           SessionOtps
+	SessionRepo    repository.SessionRepository
+	RegistryClient serviceregistry.Client
+	TurnClient     turnserver.Client
 }
 
 // Join adds a user as a session participant.
@@ -105,12 +106,13 @@ func (s *SessionService) registerParticipant(ctx context.Context, p models.Parti
 		return dto.Service{}, err
 	}
 
+	sessionKey, err := crypto.Hmac([]byte(p.SessionID), s.Opts.SessionSecret)
 	userSession := dto.Session{
 		UserID: p.UserID,
-		Key:    p.SessionID,
+		Key:    hex.EncodeToString(sessionKey),
 	}
 
-	turnURL := fmt.Sprintf("%s://%s:%d", s.TurnRPCProtocol, svc.Location, svc.Port)
+	turnURL := fmt.Sprintf("%s://%s:%d", s.Opts.TurnRPCProtocol, svc.Location, svc.Port)
 	err = s.TurnClient.Register(ctx, turnURL, userSession)
 	if err != nil {
 		span.LogFields(tracelog.Error(err))
@@ -177,7 +179,7 @@ func (s *SessionService) findBestTurnServer(ctx context.Context, services []dto.
 			defer wg.Done()
 
 			svc := services[idx]
-			url := fmt.Sprintf("%s://%s:%d", s.TurnRPCProtocol, svc.Location, svc.Port)
+			url := fmt.Sprintf("%s://%s:%d", s.Opts.TurnRPCProtocol, svc.Location, svc.Port)
 			stats, err := s.TurnClient.GetStatistics(ctx, url)
 			if err != nil {
 				log.Warn("failed to gather statistics from "+url, zap.Error(err))
@@ -236,11 +238,11 @@ func (s *SessionService) createOffer(ctx context.Context, p models.Participant, 
 	offer := models.SessionOffer{
 		Token: token,
 		TURN: models.TurnCandidate{
-			URL:      fmt.Sprintf("turn:%s:%d", svc.Location, s.RelayPort),
+			URL:      fmt.Sprintf("turn:%s:%d", svc.Location, s.Opts.RelayPort),
 			Username: p.UserID,
 		},
 		STUN: models.StunCandidate{
-			URL: fmt.Sprintf("stun:%s:%d", svc.Location, s.RelayPort),
+			URL: fmt.Sprintf("stun:%s:%d", svc.Location, s.Opts.RelayPort),
 		},
 	}
 

@@ -112,10 +112,13 @@ func createService() (service.SessionService, context.Context) {
 	}
 
 	s := service.SessionService{
-		Issuer:          jwt.NewIssuer(getTestJWTCredentials()),
-		TurnRPCProtocol: "http",
-		RelayPort:       3478,
-		SessionRepo:     repository.NewSessionRepository(db),
+		Issuer: jwt.NewIssuer(getTestJWTCredentials()),
+		Opts: service.SessionOtps{
+			TurnRPCProtocol: "http",
+			RelayPort:       3478,
+			SessionSecret:   []byte(id.New()),
+		},
+		SessionRepo: repository.NewSessionRepository(db),
 	}
 
 	return s, context.Background()

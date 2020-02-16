@@ -2,8 +2,10 @@ package main
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/CzarSimon/httputil"
+	"github.com/CzarSimon/httputil/jwt"
 	"github.com/CzarSimon/httputil/logger"
 	_ "github.com/go-sql-driver/mysql"
 	"go.uber.org/zap"
@@ -29,6 +31,12 @@ func newServer(e *env) *http.Server {
 
 	r.POST("/v1/sessions", e.createSession)
 	r.GET("/v1/sessions/:sessionId", e.joinSession)
+
+	rbac := httputil.RBAC{
+		Verifier: jwt.NewVerifier(e.cfg.jwtCredentials, time.Minute),
+	}
+	messageGroup := r.Group("/v1/sessions/:sessionId/messages", rbac.Secure("USER"))
+	messageGroup.POST("/signal", notImplemented)
 
 	return &http.Server{
 		Addr:    ":" + e.cfg.port,

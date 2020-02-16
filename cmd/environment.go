@@ -85,12 +85,15 @@ func setupEnv() *env {
 	})
 
 	sessionService := &service.SessionService{
-		Issuer:          jwt.NewIssuer(cfg.jwtCredentials),
-		RelayPort:       cfg.turn.udpPort,
-		TurnRPCProtocol: cfg.turn.rpcProtocol,
-		SessionRepo:     repository.NewSessionRepository(db),
-		RegistryClient:  registryClient,
-		TurnClient:      turnClient,
+		Issuer: jwt.NewIssuer(cfg.jwtCredentials),
+		Opts: service.SessionOtps{
+			RelayPort:       cfg.turn.udpPort,
+			TurnRPCProtocol: cfg.turn.rpcProtocol,
+			SessionSecret:   []byte(cfg.sessionSecret),
+		},
+		SessionRepo:    repository.NewSessionRepository(db),
+		RegistryClient: registryClient,
+		TurnClient:     turnClient,
 	}
 
 	messageService := &service.MessageService{

@@ -365,6 +365,7 @@ func createTestEnv() (*env, context.Context) {
 		},
 		migrationsPath: "../resources/db/sqlite",
 		jwtCredentials: getTestJWTCredentials(),
+		sessionSecret:  id.New(),
 	}
 
 	db := dbutil.MustConnect(cfg.db)
@@ -386,10 +387,13 @@ func createTestEnv() (*env, context.Context) {
 
 	sessionRepo := repository.NewSessionRepository(db)
 	sessionService := &service.SessionService{
-		Issuer:          jwt.NewIssuer(cfg.jwtCredentials),
-		TurnRPCProtocol: cfg.turn.rpcProtocol,
-		RelayPort:       cfg.turn.udpPort,
-		SessionRepo:     sessionRepo,
+		Issuer: jwt.NewIssuer(cfg.jwtCredentials),
+		Opts: service.SessionOtps{
+			TurnRPCProtocol: cfg.turn.rpcProtocol,
+			RelayPort:       cfg.turn.udpPort,
+			SessionSecret:   []byte(cfg.sessionSecret),
+		},
+		SessionRepo: sessionRepo,
 	}
 
 	messageService := &service.MessageService{
