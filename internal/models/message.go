@@ -7,6 +7,7 @@ import (
 // Message type
 var (
 	TypeOffer = "OFFER"
+	TypeText  = "TEXT"
 )
 
 // Message websocket message.
@@ -19,4 +20,9 @@ type Message struct {
 
 func (m Message) String() string {
 	return fmt.Sprintf("Message(type=%s, senderId=%s, sessionId=%s)", m.Type, m.SenderID, m.SessionID)
+}
+
+// TextMessage text message from user.
+type TextMessage struct {
+	Body string `json:"body,omitempty"`
 }

@@ -66,6 +66,20 @@ func (m *MessageService) ConnectAndSend(
 	return nil
 }
 
+// Send sends a message to a connected socket.
+func (m *MessageService) Send(ctx context.Context, message models.Message) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "service_message_service_send")
+	defer span.Finish()
+
+	err := m.sendMessage(ctx, message)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		return err
+	}
+
+	return nil
+}
+
 func (m *MessageService) sendMessage(ctx context.Context, message models.Message) error {
 	err := m.Socket.Send(ctx, message)
 	if err != nil {

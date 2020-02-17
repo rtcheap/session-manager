@@ -28,6 +28,10 @@ import (
 	"go.uber.org/zap"
 )
 
+type statusRes struct {
+	Status string `json:"status,omitempty"`
+}
+
 func TestCreateSession_NoCredentials(t *testing.T) {
 	assert := assert.New(t)
 	e, _ := createTestEnv()
@@ -168,10 +172,6 @@ func TestJoinSession_BadGateway_TurnServer(t *testing.T) {
 	defer e.db.Close()
 	server := newServer(e)
 
-	type statusRes struct {
-		Status string `json:"status,omitempty"`
-	}
-
 	turnID := id.New()
 	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]rpc.MockResponse{
 		"GET:http://service-registry:8080/v1/services/" + turnID: rpc.MockResponse{
@@ -227,10 +227,6 @@ func TestJoinSession_BadGateway_ServiceRegistry(t *testing.T) {
 	defer e.db.Close()
 	server := newServer(e)
 
-	type statusRes struct {
-		Status string `json:"status,omitempty"`
-	}
-
 	turnID := id.New()
 	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]rpc.MockResponse{
 		"GET:http://service-registry:8080/v1/services/" + turnID: rpc.MockResponse{
@@ -270,10 +266,6 @@ func TestJoinSession(t *testing.T) {
 	e, ctx := createTestEnv()
 	defer e.db.Close()
 	server := newServer(e)
-
-	type statusRes struct {
-		Status string `json:"status,omitempty"`
-	}
 
 	turnID := id.New()
 	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]rpc.MockResponse{
@@ -351,6 +343,129 @@ func TestJoinSession(t *testing.T) {
 	changed, err := e.sessionService.SessionRepo.Find(ctx, session.ID)
 	assert.NoError(err)
 	assert.Len(changed.Participants, 1)
+}
+
+func TestSendMessagePermissions(t *testing.T) {
+	assert := assert.New(t)
+	e, _ := createTestEnv()
+	defer e.db.Close()
+	server := newServer(e)
+
+	type testCase struct {
+		method         string
+		url            string
+		role           string
+		expectedStatus int
+	}
+
+	sessionID := id.New()
+	cases := []testCase{
+		testCase{
+			method:         http.MethodPost,
+			url:            fmt.Sprintf("/v1/sessions/%s/messages/text", sessionID),
+			role:           "",
+			expectedStatus: http.StatusUnauthorized,
+		},
+		testCase{
+			method:         http.MethodPost,
+			url:            fmt.Sprintf("/v1/sessions/%s/messages/text", sessionID),
+			role:           jwt.SystemRole,
+			expectedStatus: http.StatusForbidden,
+		},
+	}
+
+	for i, tc := range cases {
+		req := createTestRequest(tc.url, tc.method, tc.role, nil)
+		res := performTestRequest(server.Handler, req)
+		assert.Equal(tc.expectedStatus, res.Code, fmt.Sprintf("Test case %d failed", i))
+	}
+}
+
+func TestRecieveAndSendText(t *testing.T) {
+	assert := assert.New(t)
+	e, ctx := createTestEnv()
+	e.cfg.port = "32951"
+	defer e.db.Close()
+	server := newServer(e)
+
+	turnID := id.New()
+	mockRegistryClient := MockClient("http://service-registry:8080", jwt.SystemRole, map[string]rpc.MockResponse{
+		"GET:http://service-registry:8080/v1/services/" + turnID: rpc.MockResponse{
+			Body: dto.Service{
+				ID:          turnID,
+				Application: "turn-server",
+				Location:    "assigned-turn",
+				Port:        8083,
+				Status:      dto.StatusHealty,
+			},
+			Err: nil,
+		},
+	})
+
+	e.sessionService.RegistryClient = serviceregistry.NewClient(mockRegistryClient)
+
+	mockTurnClient := MockClient("", jwt.SystemRole, map[string]rpc.MockResponse{
+		"POST:http://assigned-turn:8083/v1/sessions": rpc.MockResponse{
+			Body: statusRes{Status: "OK"},
+			Err:  nil,
+		},
+	})
+
+	e.sessionService.TurnClient = turnserver.NewClient(mockTurnClient)
+
+	session := models.Session{
+		ID:          id.New(),
+		Status:      models.StatusCreated,
+		RelayServer: turnID,
+	}
+
+	err := e.sessionService.SessionRepo.Save(ctx, session)
+	assert.NoError(err)
+
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil {
+			log.Error("unexpected error closing server", zap.Error(err))
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	headers := http.Header{}
+	headers.Add(clientIDHeader, id.New())
+	headers.Add(clientSecretHeader, id.New())
+
+	url := fmt.Sprintf("ws://127.0.0.1:%s/v1/sessions/%s?client-id=%s&client-secret=%s", e.cfg.port, session.ID, id.New(), id.New())
+	conn, res, err := websocket.DefaultDialer.Dial(url, headers)
+	assert.NoError(err)
+	assert.Equal(http.StatusSwitchingProtocols, res.StatusCode)
+	defer conn.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	url = fmt.Sprintf("http://127.0.0.1:%s/v1/sessions/%s/messages/text", e.cfg.port, session.ID)
+	req := createTestRequest(url, http.MethodPost, "USER", models.TextMessage{Body: "hello"})
+	res, err = rpc.NewClient(time.Second).Do(req)
+	assert.NoError(err)
+	assert.Equal(http.StatusOK, res.StatusCode)
+
+	for {
+		mt, data, err := conn.ReadMessage()
+		assert.NoError(err)
+		assert.Equal(websocket.TextMessage, mt)
+
+		var message models.Message
+		err = json.Unmarshal(data, &message)
+		assert.NoError(err)
+
+		if message.Type == models.TypeText {
+			assert.Equal(session.ID, message.SessionID)
+			assert.Equal("hello", message.Body)
+
+			session, err := e.sessionService.SessionRepo.Find(ctx, session.ID)
+			assert.NoError(err)
+			assert.NotEqual(session.Participants[0].UserID, message.SenderID)
+			break
+		}
+	}
 }
 
 // ---- Test utils ----

@@ -36,7 +36,7 @@ func newServer(e *env) *http.Server {
 		Verifier: jwt.NewVerifier(e.cfg.jwtCredentials, time.Minute),
 	}
 	messageGroup := r.Group("/v1/sessions/:sessionId/messages", rbac.Secure("USER"))
-	messageGroup.POST("/signal", notImplemented)
+	messageGroup.POST("/text", e.recieveTextMessage)
 
 	return &http.Server{
 		Addr:    ":" + e.cfg.port,

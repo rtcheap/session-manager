@@ -56,6 +56,43 @@ func (e *env) joinSession(c *gin.Context) {
 	}
 }
 
+func (e *env) recieveTextMessage(c *gin.Context) {
+	span, ctx := opentracing.StartSpanFromContext(c.Request.Context(), "controller_recieve_message")
+	defer span.Finish()
+
+	principal, ok := httputil.GetPrincipal(c)
+	if !ok {
+		err := httputil.InternalServerError(errors.New("failed to get principal from context"))
+		span.LogFields(tracelog.Error(err))
+		c.Error(err)
+		return
+	}
+
+	var text models.TextMessage
+	err := c.BindJSON(&text)
+	if !ok {
+		err = httputil.BadRequestError(err)
+		span.LogFields(tracelog.Error(err))
+		c.Error(err)
+		return
+	}
+
+	message := models.Message{
+		Type:      models.TypeText,
+		SenderID:  principal.ID,
+		SessionID: c.Param("sessionId"),
+		Body:      text.Body,
+	}
+	err = e.messageService.Send(ctx, message)
+	if err != nil {
+		span.LogFields(tracelog.Error(err))
+		c.Error(err)
+		return
+	}
+
+	httputil.SendOK(c)
+}
+
 func extractCredentials(c *gin.Context) (models.Credentials, *httputil.Error) {
 	clientID := c.GetHeader(clientIDHeader)
 	clientSecret := c.GetHeader(clientSecretHeader)
